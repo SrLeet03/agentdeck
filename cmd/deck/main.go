@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -28,7 +29,7 @@ usage:
   deck list [n]   print the n most recent sessions (default 20)
   deck live       print running agent processes
   deck handoff <id-prefix>...   write an AI context note from session(s) and print its path
-  deck doctor     check data folders and iTerm2 access
+  deck doctor     check data folders and terminal access
   deck version    print the version
 `
 
@@ -132,10 +133,12 @@ func doctor() {
 		}
 	}
 	if err := term.Check(); err != nil {
-		fmt.Println("✗ iTerm2 automation:", err)
-		fmt.Println("  allow it in System Settings → Privacy & Security → Automation")
+		fmt.Printf("✗ terminal %s: %v\n", term.Name(), err)
+		if runtime.GOOS == "darwin" {
+			fmt.Println("  allow it in System Settings → Privacy & Security → Automation")
+		}
 	} else {
-		fmt.Println("✓ iTerm2 automation works")
+		fmt.Printf("✓ terminal: %s (set \"terminal\" in config.json to change)\n", term.Name())
 	}
 }
 

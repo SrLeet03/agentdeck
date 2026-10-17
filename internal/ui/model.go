@@ -255,7 +255,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case actionMsg:
-		if msg.err != nil {
+		if msg.err != nil && term.IsNotice(msg.err) {
+			m.flash(msg.err.Error(), false)
+		} else if msg.err != nil {
 			m.flash(msg.err.Error(), true)
 		} else if msg.text != "" {
 			m.flash(msg.text, false)
@@ -1198,7 +1200,7 @@ func (m *Model) openSelected() tea.Cmd {
 				err := term.OpenTab(dir, config.Get().Command("claude", "claude attach "+p.JobID), title)
 				return actionMsg{text: "attached to background Claude job " + p.JobID, err: err, reload: true}
 			}
-			return actionMsg{err: fmt.Errorf("running as pid %d on %s, but no iTerm2 tab owns that terminal", p.PID, orDash(p.TTY))}
+			return actionMsg{err: fmt.Errorf("running as pid %d on %s, but %s can't find a tab for that terminal", p.PID, orDash(p.TTY), term.Name())}
 		}
 	}
 	if s.Path == "" {
@@ -1208,7 +1210,7 @@ func (m *Model) openSelected() tea.Cmd {
 	c := resumeCommand(s)
 	return func() tea.Msg {
 		err := term.OpenTab(dir, c, title)
-		msg := "resumed in new iTerm2 tab"
+		msg := "resumed in a new " + term.Name() + " tab"
 		if !exact {
 			msg += " (original folder is gone — opened in " + session.ShortPath(dir) + ")"
 		}
@@ -1314,16 +1316,19 @@ func deliverHandoff(h handoffMsg) tea.Cmd {
 					return actionMsg{text: "typed into the session on " + tty + " — review it there and press enter"}
 				}
 			}
-			// No iTerm tab owns this session: put the line on the clipboard and open/attach a tab for it.
+			// The terminal can't type into that tab (or none owns it): clipboard, plus focus or attach where possible.
 			if err := term.CopyToClipboard(text); err != nil {
 				return actionMsg{err: err}
+			}
+			if ok, _ := term.Focus(tty); ok {
+				return actionMsg{text: "switched to it — the message is on your clipboard, paste it and press enter"}
 			}
 			if p.Agent == "claude" && p.Kind == "bg" && p.JobID != "" {
 				dir, _ := term.ExistingDir(p.Cwd)
 				err := term.OpenTab(dir, config.Get().Command("claude", "claude attach "+p.JobID), "Claude · "+p.JobID)
 				return actionMsg{text: "attached the job in a new tab — paste (⌘V) and press enter to send the context", err: err, reload: true}
 			}
-			return actionMsg{text: "no iTerm2 tab found for it — the message is on your clipboard, paste it there"}
+			return actionMsg{text: "couldn't reach its tab in " + term.Name() + " — the message is on your clipboard, paste it there"}
 		}
 		return nil
 	}

@@ -2,18 +2,30 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
   test:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Install tmux (for the tmux backend test)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tmux
       - name: gofmt
         run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test ./...
+        env:
+          DECK_TMUX_IT: ${{ runner.os == 'Linux' && '1' || '' }}
       - run: go build ./cmd/deck
+      - name: Lint shell scripts
+        if: runner.os == 'Linux'
+        run: shellcheck install.sh scripts/update-formula.sh

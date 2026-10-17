@@ -1,4 +1,3 @@
-// Package term opens and focuses iTerm2 tabs via AppleScript.
 package term
 
 import (
@@ -9,7 +8,11 @@ import (
 	"strings"
 )
 
-const newTabScript = `on run argv
+// ---- iTerm2 -------------------------------------------------------------------
+
+type iTerm struct{}
+
+const itermNewTab = `on run argv
 	set cmd to item 1 of argv
 	set tabTitle to item 2 of argv
 	tell application "iTerm2"
@@ -27,27 +30,8 @@ const newTabScript = `on run argv
 	end tell
 end run`
 
-const focusScript = `on run argv
-	set target to item 1 of argv
-	tell application "iTerm2"
-		repeat with w in windows
-			repeat with t in tabs of w
-				repeat with s in sessions of t
-					if tty of s is target then
-						select w
-						tell t to select
-						tell s to select
-						activate
-						return "ok"
-					end if
-				end repeat
-			end repeat
-		end repeat
-	end tell
-	return "missing"
-end run`
-
-const typeScript = `on run argv
+// itermFind selects the session on tty item 1; when item 2 is non-empty it is typed without a newline.
+const itermFind = `on run argv
 	set target to item 1 of argv
 	set txt to item 2 of argv
 	tell application "iTerm2"
@@ -58,7 +42,7 @@ const typeScript = `on run argv
 						select w
 						tell t to select
 						tell s to select
-						tell s to write text txt newline NO
+						if txt is not "" then tell s to write text txt newline NO
 						activate
 						return "ok"
 					end if
@@ -69,99 +53,107 @@ const typeScript = `on run argv
 	return "missing"
 end run`
 
-// TypeInto types text into the iTerm2 session on tty without pressing enter, and focuses it.
-func TypeInto(tty, text string) (bool, error) {
-	if tty == "" {
-		return false, nil
-	}
-	if !strings.HasPrefix(tty, "/dev/") {
-		tty = "/dev/" + tty
-	}
-	out, err := osascript(typeScript, tty, text)
+func (iTerm) Name() string { return "iTerm2" }
+
+func (iTerm) OpenTab(dir, command, title string) error {
+	_, err := osascript(itermNewTab, shellLine(dir, command), title)
+	return err
+}
+
+func (iTerm) Focus(tty string) (bool, error) {
+	out, err := osascript(itermFind, devTTY(tty), "")
 	return out == "ok", err
 }
 
+func (iTerm) TypeInto(tty, text string) (bool, error) {
+	out, err := osascript(itermFind, devTTY(tty), text)
+	return out == "ok", err
+}
+
+func (b iTerm) Check() error {
+	if err := compileScripts(itermNewTab, itermFind); err != nil {
+		return err
+	}
+	_, err := b.Focus("ttys-agentdeck-check")
+	return err
+}
+
+// ---- Terminal.app ---------------------------------------------------------------
+
+type appleTerminal struct{}
+
+// Terminal.app has no "new tab" scripting verb, so each session gets its own window.
+const terminalNew = `on run argv
+	set cmd to item 1 of argv
+	set tabTitle to item 2 of argv
+	tell application "Terminal"
+		activate
+		set t to do script cmd
+		if tabTitle is not "" then set custom title of t to tabTitle
+	end tell
+end run`
+
+const terminalFind = `on run argv
+	set target to item 1 of argv
+	tell application "Terminal"
+		repeat with w in windows
+			repeat with t in tabs of w
+				if tty of t is target then
+					set selected of t to true
+					set index of w to 1
+					activate
+					return "ok"
+				end if
+			end repeat
+		end repeat
+	end tell
+	return "missing"
+end run`
+
+func (appleTerminal) Name() string { return "Terminal" }
+
+func (appleTerminal) OpenTab(dir, command, title string) error {
+	_, err := osascript(terminalNew, shellLine(dir, command), title)
+	return err
+}
+
+func (appleTerminal) Focus(tty string) (bool, error) {
+	out, err := osascript(terminalFind, devTTY(tty))
+	return out == "ok", err
+}
+
+// TypeInto is unsupported: Terminal's `do script` always presses return. Callers fall back to the clipboard.
+func (appleTerminal) TypeInto(string, string) (bool, error) { return false, nil }
+
+func (b appleTerminal) Check() error {
+	if err := compileScripts(terminalNew, terminalFind); err != nil {
+		return err
+	}
+	_, err := b.Focus("ttys-agentdeck-check")
+	return err
+}
+
+// ---- AppleScript helpers -----------------------------------------------------------
+
 func osascript(script string, args ...string) (string, error) {
-	cmd := exec.Command("osascript", append([]string{"-e", script}, args...)...)
-	out, err := cmd.CombinedOutput()
+	out, err := exec.Command("osascript", append([]string{"-e", script}, args...)...).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("osascript: %s", strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-// OpenTab runs command in a new iTerm2 tab after cd-ing into dir.
-func OpenTab(dir, command, title string) error {
-	line := command
-	if dir != "" {
-		line = "cd " + Quote(dir) + " && " + command
-	}
-	_, err := osascript(newTabScript, line, title)
-	return err
-}
-
-// Focus brings the iTerm2 session on the given tty (e.g. "ttys003") to the front.
-func Focus(tty string) (bool, error) {
-	if tty == "" {
-		return false, nil
-	}
-	if !strings.HasPrefix(tty, "/dev/") {
-		tty = "/dev/" + tty
-	}
-	out, err := osascript(focusScript, tty)
-	return out == "ok", err
-}
-
-// Quote single-quotes s for zsh/bash.
-func Quote(s string) string {
-	if s != "" && strings.IndexFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-_./~+@:", r))
-	}) < 0 {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// ExistingDir returns dir, or its nearest existing ancestor when dir was deleted (e.g. a removed worktree).
-func ExistingDir(dir string) (string, bool) {
-	if dir == "" {
-		h, _ := os.UserHomeDir()
-		return h, false
-	}
-	d := dir
-	for {
-		if st, err := os.Stat(d); err == nil && st.IsDir() {
-			return d, d == dir
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			h, _ := os.UserHomeDir()
-			return h, false
-		}
-		d = parent
-	}
-}
-
-// CopyToClipboard puts s on the macOS clipboard.
-func CopyToClipboard(s string) error {
-	cmd := exec.Command("pbcopy")
-	cmd.Stdin = strings.NewReader(s)
-	return cmd.Run()
-}
-
-// Check compiles both scripts and does a harmless iTerm2 lookup to confirm automation access.
-func Check() error {
+func compileScripts(scripts ...string) error {
 	tmp, err := os.MkdirTemp("", "agentdeck")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	for i, sc := range []string{newTabScript, focusScript, typeScript} {
+	for i, sc := range scripts {
 		out, err := exec.Command("osacompile", "-e", sc, "-o", filepath.Join(tmp, fmt.Sprintf("s%d.scpt", i))).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("script %d does not compile: %s", i, strings.TrimSpace(string(out)))
 		}
 	}
-	_, err = Focus("ttys-agentdeck-check")
-	return err
+	return nil
 }

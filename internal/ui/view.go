@@ -556,7 +556,7 @@ func (m Model) viewHelp() string {
 	rows := [][2]string{
 		{"↑/↓  j/k", "move  ·  pgup/pgdn ctrl+u/d  ·  home/end"},
 		{"tab / 1-9", "switch tab: All, Pinned, Live, Claude, Codex, Pi, Archived, then your groups (▸)"},
-		{"enter", "running → jump to its iTerm2 tab (or attach a Claude bg job); otherwise resume in a new tab"},
+		{"enter", "running → jump to its tab (or attach a Claude bg job); otherwise resume in a new tab (" + term.Name() + ")"},
 		{"n", "new session: pick agent, then folder (defaults to the selected session's folder)"},
 		{"/", "search title, prompts, folder, model, branch;  #tag filters by tag;  @group by group;  esc clears"},
 		{"g", "toggle grouping by project (worktrees fold into their repo)  ·  space/enter folds a project"},

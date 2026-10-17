@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -44,7 +45,8 @@ type psRow struct {
 }
 
 func ps() map[int]psRow {
-	out, err := exec.Command("ps", "-axww", "-o", "pid=,ppid=,tty=,etime=,args=").Output()
+	// -e -ww works with both BSD (macOS) and procps (Linux) ps.
+	out, err := exec.Command("ps", "-e", "-ww", "-o", "pid=,ppid=,tty=,etime=,args=").Output()
 	if err != nil {
 		return nil
 	}
@@ -57,7 +59,7 @@ func ps() map[int]psRow {
 		pid, _ := strconv.Atoi(f[0])
 		ppid, _ := strconv.Atoi(f[1])
 		tty := f[2]
-		if tty == "??" {
+		if tty == "??" || tty == "?" { // macOS / Linux spelling of "no terminal"
 			tty = ""
 		}
 		rows[pid] = psRow{pid, ppid, tty, parseEtime(f[3]), strings.Join(f[4:], " ")}
@@ -210,8 +212,12 @@ func Scan() []Proc {
 	return procs
 }
 
-// fillOpenFiles uses one lsof call to find each process's cwd and any session file it holds open.
+// fillOpenFiles finds each process's cwd and any session file it holds open: via /proc on Linux, one lsof call elsewhere.
 func fillOpenFiles(procs []Proc, idx map[int]int, pids []string, home string) {
+	if runtime.GOOS == "linux" {
+		fillFromProc(procs, idx, home)
+		return
+	}
 	out, _ := exec.Command("lsof", "-w", "-n", "-P", "-p", strings.Join(pids, ","), "-Fpfn").Output()
 	codexDir := filepath.Join(home, ".codex", "sessions") + "/"
 	piDir := filepath.Join(home, ".pi", "agent", "sessions") + "/"
@@ -240,6 +246,27 @@ func fillOpenFiles(procs []Proc, idx map[int]int, pids []string, home string) {
 				procs[cur].Cwd = name
 			} else if strings.HasSuffix(name, ".jsonl") && (strings.HasPrefix(name, codexDir) || strings.HasPrefix(name, piDir)) {
 				procs[cur].File = name
+			}
+		}
+	}
+}
+
+func isSessionFile(name, home string) bool {
+	return strings.HasSuffix(name, ".jsonl") &&
+		(strings.HasPrefix(name, filepath.Join(home, ".codex", "sessions")+"/") ||
+			strings.HasPrefix(name, filepath.Join(home, ".pi", "agent", "sessions")+"/"))
+}
+
+func fillFromProc(procs []Proc, idx map[int]int, home string) {
+	for pid, i := range idx {
+		base := filepath.Join("/proc", strconv.Itoa(pid))
+		if cwd, err := os.Readlink(filepath.Join(base, "cwd")); err == nil {
+			procs[i].Cwd = cwd
+		}
+		fds, _ := os.ReadDir(filepath.Join(base, "fd"))
+		for _, fd := range fds {
+			if target, err := os.Readlink(filepath.Join(base, "fd", fd.Name())); err == nil && isSessionFile(target, home) {
+				procs[i].File = target
 			}
 		}
 	}

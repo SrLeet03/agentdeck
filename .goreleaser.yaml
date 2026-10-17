@@ -1,0 +1,45 @@
+version: 2
+project_name: deck
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: deck
+    main: ./cmd/deck
+    binary: deck
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version=v{{ .Version }}
+
+archives:
+  - id: deck
+    formats: [tar.gz]
+    name_template: "deck_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [README.md, LICENSE]
+
+checksum:
+  name_template: checksums.txt
+
+nfpms:
+  - id: packages
+    package_name: agentdeck
+    file_name_template: "{{ .ConventionalFileName }}"
+    homepage: https://github.com/SrLeet03/agentdeck
+    description: Terminal dashboard for Claude Code, Codex and Pi sessions
+    maintainer: Sarvesh Raut <59080732+SrLeet03@users.noreply.github.com>
+    license: MIT
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    recommends: [tmux]
+
+changelog:
+  use: github
+  filters:
+    exclude:
+      - "^chore: update Homebrew formula"

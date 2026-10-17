@@ -14,6 +14,8 @@ type Config struct {
 	// Env sets environment variables per agent ("claude", "codex", "pi") for every launch:
 	// commands typed into iTerm2 tabs get an `export K=V && ` prefix, and commands deck runs itself get them in their env.
 	Env map[string]map[string]string `json:"env"`
+	// Terminal picks where sessions open: auto (default), iterm2, terminal, tmux, gnome-terminal, konsole or none.
+	Terminal string `json:"terminal,omitempty"`
 }
 
 // Default has no overrides; agents launch with the shell's own environment.
