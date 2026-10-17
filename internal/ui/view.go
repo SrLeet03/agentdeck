@@ -967,10 +967,14 @@ func (m Model) viewModal() (string, bool) {
 // ---- help --------------------------------------------------------------------------
 
 func (m Model) viewHelp() string {
+	enter := "running → jump to its tab · otherwise resume in a new " + term.Name() + " tab"
+	if term.Name() == "clipboard" {
+		enter = "copy the session's resume command (no supported terminal — set \"terminal\" in config.json)"
+	}
 	rows := [][2]string{
 		{"↑↓ j k", "move · pgup/pgdn · home/end · mouse wheel & click"},
 		{"tab 1-9", "switch tab: All, Pinned, Live, Claude, Codex, Pi, Archived, your ▸groups"},
-		{"enter", "running → jump to its tab · otherwise resume in a new " + term.Name() + " tab"},
+		{"enter", enter},
 		{"⌃K", "command palette: every action, tab, theme and session"},
 		{"n", "new session — pick the agent, then the folder"},
 		{"/", "fuzzy search · #tag · @group · esc clears"},
