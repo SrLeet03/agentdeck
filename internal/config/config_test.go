@@ -1,9 +1,29 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestSetThemeKeepsOtherSettings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	once = sync.Once{}
+	current = Config{}
+	os.MkdirAll(filepath.Dir(Path()), 0o755)
+	os.WriteFile(Path(), []byte(`{"env":{"claude":{"CLAUDE_CODE_USE_FOUNDRY":"0"}},"terminal":"tmux"}`), 0o644)
+	if err := SetTheme("retro"); err != nil {
+		t.Fatal(err)
+	}
+	once = sync.Once{}
+	c := Get()
+	if c.Theme != "retro" || c.Terminal != "tmux" || c.Env["claude"]["CLAUDE_CODE_USE_FOUNDRY"] != "0" {
+		t.Fatalf("settings lost: %+v", c)
+	}
+	once = sync.Once{} // don't leak the temp config into other tests
+}
 
 func foundryOff() Config {
 	return Config{Env: map[string]map[string]string{"claude": {"CLAUDE_CODE_USE_FOUNDRY": "0"}}}

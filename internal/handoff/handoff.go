@@ -139,6 +139,10 @@ func header(sources []*session.Session) string {
 		fmt.Fprintf(&b, "- %s session \"%s\" in %s (id %s, last active %s)\n", s.Agent, cut(oneLine(s.DisplayTitle()), 80),
 			s.Cwd, s.ID, s.Updated.Local().Format("Jan 2 15:04"))
 	}
+	b.WriteString("\nFull transcripts (JSONL, one event per line; open them if you need exact details, commands or code):\n")
+	for _, s := range sources {
+		fmt.Fprintf(&b, "- %s\n", s.Path)
+	}
 	b.WriteString("\n")
 	return b.String()
 }
@@ -147,7 +151,7 @@ func header(sources []*session.Session) string {
 func cacheName(sources []*session.Session) string {
 	h := sha1.New()
 	for _, s := range sources {
-		fmt.Fprintf(h, "%s|%d|", s.Key(), session.ModTime(s.Path).UnixNano())
+		fmt.Fprintf(h, "v2|%s|%d|", s.Key(), session.ModTime(s.Path).UnixNano()) // v2: notes link transcripts
 	}
 	slug := slugRe.ReplaceAllString(strings.ToLower(oneLine(sources[0].DisplayTitle())), "-")
 	slug = strings.Trim(cut(slug, 40), "-…")

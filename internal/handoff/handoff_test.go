@@ -33,6 +33,17 @@ func TestTranscriptKeepsTailAndLabelsRoles(t *testing.T) {
 	}
 }
 
+func TestHeaderLinksTranscripts(t *testing.T) {
+	a := &session.Session{Agent: session.Claude, ID: "a1", Path: "/h/.claude/projects/x/a1.jsonl", Cwd: "/w", Title: "one"}
+	b := &session.Session{Agent: session.Codex, ID: "b2", Path: "/h/.codex/sessions/rollout-b2.jsonl", Cwd: "/w", Title: "two"}
+	h := header([]*session.Session{a, b})
+	for _, want := range []string{"Full transcripts", "- " + a.Path, "- " + b.Path} {
+		if !strings.Contains(h, want) {
+			t.Errorf("header missing %q:\n%s", want, h)
+		}
+	}
+}
+
 func TestStartCommandQuotesPath(t *testing.T) {
 	got := StartCommand(session.Codex, "/Users/me/it's/note.md")
 	want := `codex "$(cat '/Users/me/it'\''s/note.md')"`

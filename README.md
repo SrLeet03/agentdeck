@@ -7,15 +7,23 @@ Browse and search your history, see what's running right now, resume anything in
 into pins and groups, and hand context from one session (or several) to another — across agents.
 
 ```
-◆ agentdeck   ● 2 working  ◐ 5 idle  │  212 sessions · 9 active today  │  tokens today 41.2M · 7d 310M
- 1 All 212  2 Pinned 2  3 Live 7  4 Claude 60  5 Codex 98  6 Pi 54  7 Archived 0  8 ▸Launch 4      / search
-╭──────────────────────────────────────────────────────╮╭──────────────────────────────────────╮
-│▾ ★ Pinned  2 ─────────────────────────────────────── ││ Claude Code  cli                     │
-│● CC ★ fix flaky checkout tests   web-app         now ││ fix flaky checkout tests             │
-│◐ CX ★ migrate auth to OAuth      api-server      18m ││ Live     ● working  pid 41872        │
-│▾ Recent  210 ─────────────────────────────────────── ││ Folder   ~/code/web-app              │
-│  PI   draft release notes        docs            2d  ││ Tokens   12.4M  in 3K · out 210K · … │
-╰──────────────────────────────────────────────────────╯╰──────────────────────────────────────╯
+ ◆ agentdeck   good evening, Alex                          ⠹ 2 working │ ◐ 1 waiting │ ▂▅▃█▆▄▇ 41.2M tokens today
+╭─ NOW RUNNING · 3 ───────────────────────────────────────────────────────────────────────────────────────╮
+│ ⠹ CLAUDE fix flaky checkout tests      ⠹ CODEX migrate auth to OAuth      ◐ PI draft release notes     │
+│   web-app · ⠹ working                    api-server · ⠹ working             docs · ◐ waiting 12m        │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  All 212  ★ Pinned 2  ● Live 3  Claude 60  Codex 98  Pi 54  Archived 0  ▸launch 4      / search   ⌃K commands
+╭──────────────────────────────────────────────────────╮╭───────────────────────────────────────────────╮
+│ ▾ ★ PINNED  2 ────────────────────────────────────── ┃││  CLAUDE CODE  cli                 ⠹ WORKING   │
+│▌⠹ ★ fix flaky checkout tests                     now ┃││                                               │
+│▌    CLAUDE  web-app  ⎇ main          ▁▂▅█▇▃ 12.4M   ┃││ fix flaky checkout tests                      │
+│ ⠹ ★ migrate auth to OAuth                        18m │││ ⌂ ~/code/web-app   ⎇ main                     │
+│     CODEX   api-server  ⎇ feat/oauth  ▁▁▃▅▂  3.1M   │││ Σ 12.4M tokens ██████████░░ in out cache      │
+│ ▾ RECENT  210 ────────────────────────────────────── │││ ──────────── conversation ────────────        │
+│   ◐ draft release notes                           2d │││ ▎ you · 14:02                                 │
+│     PI      docs  ▸launch                       880K │││ ▎ the checkout test fails on CI only          │
+╰──────────────────────────────────────────────────────╯╰───────────────────────────────────────────────╯
+ enter open   n new   ⌃K commands   / search   p pin   + group   c share   T theme   ? help
 ```
 
 ## Requirements
@@ -86,6 +94,9 @@ Other commands: `deck list [n]`, `deck live`, `deck handoff <id-prefix>...`.
   one. Each group gets its own tab, mixing agents freely; a session can be in several groups.
   On a group's tab: `-` removes a session, `E` renames the group, `X` deletes the group (sessions stay).
   Search `@name` filters by group.
+- **Command palette** (`⌃K`) — fuzzy-search every action, tab, theme and session from one box.
+- **Fuzzy search** (`/`) — typo-tolerant and ranked, with matched letters highlighted; `#tag` and `@group` filters.
+- **Themes** (`T`) — Midnight (default), Catppuccin, Mono and Retro; your choice is remembered.
 - **Organise** — rename (`r`), tag (`t`, filter with `#tag` in search), archive (`a`).
   All of this lives in `~/.agentdeck/state.json`; **agent session files are never modified or deleted**.
 - **Share context** (`m` to mark one or more sessions, then `c`) — deck has `claude -p` write a handoff note
@@ -95,7 +106,8 @@ Other commands: `deck list [n]`, `deck live`, `deck handoff <id-prefix>...`.
   - `s` lets you pick a **running session** and types a "read this handoff" line into its tab (you press enter; terminals that can't type get it on the clipboard);
   - `y` copies the note to the clipboard.
 
-  Notes are reused while the source sessions haven't changed.
+  Each note also links the full transcript files, so the new agent can open the raw history when it needs
+  exact details. Notes are reused while the source sessions haven't changed.
 - **Stats** (`s`) — tokens per agent, 14-day token chart, top projects over 30 days.
 - **Group by project** (`g`) — worktrees under `.claude/worktrees/` fold into their repo.
 - **Mouse** — wheel scrolls the list or the preview; click selects (hold ⌥ to select text).
@@ -106,6 +118,7 @@ Press `?` inside the dashboard for all keys.
 
 `~/.agentdeck/config.json` (created on first run):
 
+- `"theme"`: `midnight` (default), `catppuccin`, `mono` or `retro` — also set by pressing `T`.
 - `"terminal"`: `auto` (default), `iterm2`, `terminal`, `tmux`, `gnome-terminal`, `konsole`, or `none`
   (copy commands to the clipboard instead of opening anything).
 - `"env"`: environment variables per agent (`claude`, `codex`, `pi`) for everything deck launches. Commands typed into

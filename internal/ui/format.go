@@ -11,35 +11,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-var (
-	colClaude = lipgloss.Color("#D97757")
-	colCodex  = lipgloss.Color("#10A37F")
-	colPi     = lipgloss.Color("#A78BFA")
-	colAccent = lipgloss.Color("#7AA2F7")
-	colDim    = lipgloss.Color("#6B7280")
-	colFaint  = lipgloss.Color("#3B4252")
-	colText   = lipgloss.Color("#E5E7EB")
-	colGreen  = lipgloss.Color("#22C55E")
-	colYellow = lipgloss.Color("#EAB308")
-	colRed    = lipgloss.Color("#EF4444")
-	colSelBg  = lipgloss.Color("#1F2937")
-
-	stDim     = lipgloss.NewStyle().Foreground(colDim)
-	stFaint   = lipgloss.NewStyle().Foreground(colFaint)
-	stBold    = lipgloss.NewStyle().Bold(true).Foreground(colText)
-	stAccent  = lipgloss.NewStyle().Foreground(colAccent)
-	stGreen   = lipgloss.NewStyle().Foreground(colGreen)
-	stYellow  = lipgloss.NewStyle().Foreground(colYellow)
-	stRed     = lipgloss.NewStyle().Foreground(colRed)
-	stTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0B0F19")).Background(colAccent).Padding(0, 1)
-	stTabOn   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#0B0F19")).Background(colAccent).Padding(0, 1)
-	stTabOff  = lipgloss.NewStyle().Foreground(colDim).Padding(0, 1)
-	stKey     = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-	stPane    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colFaint)
-	stPaneOn  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colAccent)
-	stSection = lipgloss.NewStyle().Foreground(colAccent).Bold(true)
-)
-
 func agentColor(a session.Agent) lipgloss.Color {
 	switch a {
 	case session.Claude:

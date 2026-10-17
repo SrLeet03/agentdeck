@@ -16,6 +16,24 @@ type Config struct {
 	Env map[string]map[string]string `json:"env"`
 	// Terminal picks where sessions open: auto (default), iterm2, terminal, tmux, gnome-terminal, konsole or none.
 	Terminal string `json:"terminal,omitempty"`
+	// Theme is the dashboard color theme (midnight, catppuccin, mono, retro).
+	Theme string `json:"theme,omitempty"`
+}
+
+// SetTheme remembers the chosen theme, keeping every other setting in the file.
+func SetTheme(name string) error {
+	c := Get()
+	c.Theme = name
+	current = c
+	out, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := Path() + ".tmp"
+	if err := os.WriteFile(tmp, append(out, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, Path())
 }
 
 // Default has no overrides; agents launch with the shell's own environment.

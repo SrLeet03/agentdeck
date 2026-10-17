@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -61,6 +62,7 @@ const (
 	modeGroupAdd
 	modeGroupRename
 	modeConfirmGroupDelete
+	modePalette
 )
 
 type shareAction int
@@ -132,12 +134,40 @@ type Model struct {
 	statusAt  time.Time
 	ticks     int
 	w, h      int
+
+	frame     int  // animation frame, advanced while something moves
+	animating bool // an animation tick is scheduled
+
+	palInput  textinput.Model
+	palItems  []paletteItem
+	palCursor int
+
+	match map[string]matchInfo // fuzzy-search score and title highlight per session
+	conv  map[string]convEntry // rendered conversation cache
+	greet string               // first name for the greeting
+
+	inputTitle string // heading of the open input dialog
+
+	counts []int // per-tab session counts, refreshed by rebuild (not every frame)
+}
+
+type matchInfo struct {
+	score int
+	pos   []int
+}
+
+type convEntry struct {
+	width int
+	theme string
+	mtime time.Time
+	lines []string
 }
 
 type (
 	loadedMsg  []*session.Session
 	liveMsg    []live.Proc
 	tickMsg    time.Time
+	animMsg    time.Time
 	previewMsg struct {
 		key       string
 		msgs      []session.Message
@@ -167,7 +197,19 @@ func New() Model {
 	si.CharLimit = 200
 	in := textinput.New()
 	in.CharLimit = 300
+	pi := textinput.New()
+	pi.Prompt = "› "
+	pi.Placeholder = "type an action, tab, theme or session…"
+	pi.CharLimit = 120
+	if t := config.Get().Theme; t != "" {
+		th, _ := themeByName(t)
+		applyTheme(th)
+	}
 	return Model{
+		palInput:  pi,
+		match:     map[string]matchInfo{},
+		conv:      map[string]convEntry{},
+		greet:     firstName(),
 		loader:    session.NewLoader(),
 		store:     state.Open(session.DataDir()),
 		collapsed: map[string]bool{},
@@ -211,9 +253,71 @@ func (m *Model) flash(text string, err bool) {
 	m.status, m.statusErr, m.statusAt = text, err, time.Now()
 }
 
+// ---- animation -------------------------------------------------------------------
+
+const (
+	animEvery = 110 * time.Millisecond
+	toastFor  = 5 * time.Second
+)
+
+func animTick() tea.Cmd { return tea.Tick(animEvery, func(t time.Time) tea.Msg { return animMsg(t) }) }
+
+func (m Model) toastActive() bool { return m.status != "" && time.Since(m.statusAt) < toastFor }
+
+// needAnim reports whether anything on screen moves; animation stops when nothing does, so an idle
+// dashboard costs no CPU.
+func (m Model) needAnim() bool {
+	if !m.loaded || m.busy != "" || m.toastActive() {
+		return true
+	}
+	for _, p := range m.liveBy {
+		if p.Status == live.Working {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) setTheme(name string) {
+	t, _ := themeByName(name)
+	applyTheme(t)
+	m.conv = map[string]convEntry{}
+	if err := config.SetTheme(t.Name); err != nil {
+		m.flash("theme "+t.Name+" (couldn't save: "+err.Error()+")", true)
+		return
+	}
+	m.flash("theme · "+t.Name, false)
+}
+
+func (m *Model) nextTheme() {
+	_, i := themeByName(theme.Name)
+	m.setTheme(themes[(i+1)%len(themes)].Name)
+}
+
 // ---- update ----------------------------------------------------------------
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(animMsg); ok {
+		m.frame++
+		if m.needAnim() {
+			return m, animTick()
+		}
+		m.animating = false
+		return m, nil
+	}
+	nm, cmd := m.update(msg)
+	mm, ok := nm.(Model)
+	if !ok {
+		return nm, cmd
+	}
+	if !mm.animating && mm.needAnim() {
+		mm.animating = true
+		cmd = tea.Batch(cmd, animTick())
+	}
+	return mm, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
@@ -290,6 +394,8 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch m.mode {
+	case modePalette:
+		return m.handlePaletteKey(k)
 	case modeHelp, modeStats:
 		switch key {
 		case "q":
@@ -463,6 +569,10 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q":
 		return m, tea.Quit
+	case "ctrl+k", "ctrl+p", ":":
+		return m, tea.Batch(m.openPalette(), textinput.Blink)
+	case "T":
+		m.nextTheme()
 	case "esc":
 		if m.query != "" {
 			m.query = ""
@@ -500,9 +610,9 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		m.move(1)
 	case "pgup", "ctrl+u":
-		m.move(-m.listHeight() / 2)
+		m.move(-max(1, m.listHeight()/4))
 	case "pgdown", "ctrl+d":
-		m.move(m.listHeight() / 2)
+		m.move(max(1, m.listHeight()/4))
 	case "home":
 		m.move(-len(m.rows))
 	case "end":
@@ -664,7 +774,25 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, m.ensurePreview(false)
 }
 
-const listTop = 3 // header, tabs, pane border
+// listTop is the screen row of the first list line: header, optional now-running strip, tabs, pane border.
+func (m Model) listTop() int { return 3 + m.stripHeight() }
+
+// rowAt maps a screen row to a list row index, accounting for two-line session rows.
+func (m Model) rowAt(y int) int {
+	line := y - m.listTop()
+	if line < 0 || line >= m.listHeight() {
+		return -1
+	}
+	acc := 0
+	for i := m.offset; i < len(m.rows); i++ {
+		h := m.rowHeight(i)
+		if line < acc+h {
+			return i
+		}
+		acc += h
+	}
+	return -1
+}
 
 func (m Model) handleMouse(e tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.mode != modeNormal || e.Action != tea.MouseActionPress {
@@ -686,8 +814,8 @@ func (m Model) handleMouse(e tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.pScroll = max(0, m.pScroll-3)
 		}
 	case tea.MouseButtonLeft:
-		i := m.offset + e.Y - listTop
-		if !overList || e.Y < listTop || e.Y >= listTop+m.listHeight() || i < 0 || i >= len(m.rows) {
+		i := m.rowAt(e.Y)
+		if !overList || i < 0 {
 			return m, nil
 		}
 		if i == m.cursor && m.rows[i].header != "" {
@@ -707,7 +835,8 @@ func (m Model) handleMouse(e tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) openInput(md mode, prompt, value string) {
 	m.mode = md
-	m.input.Prompt = prompt
+	m.inputTitle = strings.TrimSuffix(strings.TrimSpace(prompt), ":")
+	m.input.Prompt = "› "
 	m.input.SetValue(value)
 	m.input.CursorEnd()
 	m.input.Focus()
@@ -843,18 +972,45 @@ func (m *Model) move(d int) {
 	m.clampScroll()
 }
 
+// rowHeight is 2 lines for sessions (title + meta) and 1 for headers.
+func (m Model) rowHeight(i int) int {
+	if i < 0 || i >= len(m.rows) || m.rows[i].s == nil {
+		return 1
+	}
+	return 2
+}
+
 func (m *Model) clampScroll() {
 	h := m.listHeight()
-	if h <= 0 {
+	if h <= 0 || len(m.rows) == 0 {
+		m.offset = 0
 		return
 	}
 	if m.cursor < m.offset {
 		m.offset = m.cursor
 	}
-	if m.cursor >= m.offset+h {
-		m.offset = m.cursor - h + 1
+	// Scroll down until the cursor row fits completely.
+	for m.offset < m.cursor {
+		used := 0
+		for i := m.offset; i <= m.cursor; i++ {
+			used += m.rowHeight(i)
+		}
+		if used <= h {
+			break
+		}
+		m.offset++
 	}
-	m.offset = max(0, min(m.offset, max(0, len(m.rows)-h)))
+	// Don't leave empty space at the bottom when scrolled.
+	for m.offset > 0 {
+		used := 0
+		for i := m.offset - 1; i < len(m.rows); i++ {
+			used += m.rowHeight(i)
+		}
+		if used > h {
+			break
+		}
+		m.offset--
+	}
 }
 
 func (m *Model) cur() *row {
@@ -1056,10 +1212,49 @@ func (m *Model) visible(s *session.Session, terms []string) bool {
 				return false
 			}
 		} else if !strings.Contains(hay, t) {
-			return false
+			if _, _, ok := fuzzyMatch(t, m.displayTitle(s)); !ok {
+				return false
+			}
 		}
 	}
 	return true
+}
+
+// scoreSession ranks a visible session for the current search and returns title positions to highlight.
+func (m *Model) scoreSession(s *session.Session, terms []string) matchInfo {
+	title := m.displayTitle(s)
+	lt := strings.ToLower(title)
+	var mi matchInfo
+	seen := map[int]bool{}
+	for _, t := range terms {
+		if (strings.HasPrefix(t, "#") || strings.HasPrefix(t, "@")) && len(t) > 1 {
+			mi.score += 20
+			continue
+		}
+		if i := strings.Index(lt, t); i >= 0 {
+			mi.score += 100 + len(t)*4
+			if i == 0 || lt[i-1] == ' ' {
+				mi.score += 30
+			}
+			for k := range []rune(t) {
+				seen[len([]rune(lt[:i]))+k] = true
+			}
+			continue
+		}
+		if sc, pos, ok := fuzzyMatch(t, title); ok {
+			mi.score += 40 + sc
+			for _, p := range pos {
+				seen[p] = true
+			}
+			continue
+		}
+		mi.score += 10 // matched in prompts, folder, model, …
+	}
+	for p := range seen {
+		mi.pos = append(mi.pos, p)
+	}
+	sort.Ints(mi.pos)
+	return mi
 }
 
 func (m *Model) rebuild() {
@@ -1074,13 +1269,24 @@ func (m *Model) rebuild() {
 	terms := strings.Fields(strings.ToLower(m.query))
 	all := append(append([]*session.Session{}, m.orphans...), m.sessions...)
 	var list []*session.Session
+	m.match = map[string]matchInfo{}
 	for _, s := range all {
 		if m.visible(s, terms) {
 			list = append(list, s)
+			if len(terms) > 0 {
+				m.match[s.Key()] = m.scoreSession(s, terms)
+			}
 		}
 	}
+	searching := len(terms) > 0
 	sort.SliceStable(list, func(i, j int) bool {
 		a, b := list[i], list[j]
+		if searching {
+			if sa, sb := m.match[a.Key()].score, m.match[b.Key()].score; sa != sb {
+				return sa > sb
+			}
+			return m.activity(a).After(m.activity(b))
+		}
 		if !m.grouped && m.tab != tabPinned {
 			pa, pb := m.store.Get(a.Key()).Pinned, m.store.Get(b.Key()).Pinned
 			if pa != pb {
@@ -1099,7 +1305,7 @@ func (m *Model) rebuild() {
 	m.rows = m.rows[:0]
 	if !m.grouped {
 		pinned := 0
-		if m.tab != tabPinned {
+		if m.tab != tabPinned && !searching {
 			for _, s := range list {
 				if m.store.Get(s.Key()).Pinned {
 					pinned++
@@ -1138,6 +1344,7 @@ func (m *Model) rebuild() {
 			}
 		}
 	}
+	m.counts = m.countTabs(terms)
 	m.cursor = min(m.cursor, max(0, len(m.rows)-1))
 	if keep == "" && m.cursor == 0 && len(m.rows) > 1 && m.rows[0].section {
 		m.cursor = 1 // fresh list: land on the first session, not the ★ Pinned divider
@@ -1332,4 +1539,31 @@ func deliverHandoff(h handoffMsg) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+func firstName() string {
+	if u, err := user.Current(); err == nil {
+		if f := strings.Fields(u.Name); len(f) > 0 {
+			return f[0]
+		}
+		return u.Username
+	}
+	return ""
+}
+
+// countTabs counts visible sessions per tab for the tab strip.
+func (m *Model) countTabs(terms []string) []int {
+	saved := m.tab
+	defer func() { m.tab = saved }()
+	counts := make([]int, m.numTabs())
+	all := append(append([]*session.Session{}, m.orphans...), m.sessions...)
+	for t := range counts {
+		m.tab = tab(t)
+		for _, s := range all {
+			if m.visible(s, terms) {
+				counts[t]++
+			}
+		}
+	}
+	return counts
 }
