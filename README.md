@@ -6,25 +6,9 @@ A terminal dashboard for all your local coding-agent sessions — **Claude Code*
 Browse and search your history, see what's running right now, resume anything in a new terminal tab, organise sessions
 into pins and groups, and hand context from one session (or several) to another — across agents.
 
-```
- ◆ agentdeck   good evening, Alex                          ⠹ 2 working │ ◐ 1 waiting │ ▂▅▃█▆▄▇ 41.2M tokens today
-╭─ NOW RUNNING · 3 ───────────────────────────────────────────────────────────────────────────────────────╮
-│ ⠹ CLAUDE fix flaky checkout tests      ⠹ CODEX migrate auth to OAuth      ◐ PI draft release notes     │
-│   web-app · ⠹ working                    api-server · ⠹ working             docs · ◐ waiting 12m        │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  All 212  ★ Pinned 2  ● Live 3  Claude 60  Codex 98  Pi 54  Archived 0  ▸launch 4      / search   ⌃K commands
-╭──────────────────────────────────────────────────────╮╭───────────────────────────────────────────────╮
-│ ▾ ★ PINNED  2 ────────────────────────────────────── ┃││  CLAUDE CODE  cli                 ⠹ WORKING   │
-│▌⠹ ★ fix flaky checkout tests                     now ┃││                                               │
-│▌    CLAUDE  web-app  ⎇ main          ▁▂▅█▇▃ 12.4M   ┃││ fix flaky checkout tests                      │
-│ ⠹ ★ migrate auth to OAuth                        18m │││ ⌂ ~/code/web-app   ⎇ main                     │
-│     CODEX   api-server  ⎇ feat/oauth  ▁▁▃▅▂  3.1M   │││ Σ 12.4M tokens ██████████░░ in out cache      │
-│ ▾ RECENT  210 ────────────────────────────────────── │││ ──────────── conversation ────────────        │
-│   ◐ draft release notes                           2d │││ ▎ you · 14:02                                 │
-│     PI      docs  ▸launch                       880K │││ ▎ the checkout test fails on CI only          │
-╰──────────────────────────────────────────────────────╯╰───────────────────────────────────────────────╯
- enter open   n new   ⌃K commands   / search   p pin   + group   c share   T theme   ? help
-```
+![agentdeck demo: browsing sessions, live status, command palette, fuzzy search, groups, context sharing and themes](assets/demo.gif)
+
+<sub>Demo recorded with fictional sessions.</sub>
 
 ## Requirements
 
